@@ -358,7 +358,7 @@ class MainActivity : Activity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         body.addView(list)
-        populate("")
+        populate(pendingQuery)
     }
 
     private fun makeBirdCard(bird: Bird): View {

@@ -5,6 +5,16 @@ import android.os.Bundle
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
+import android.widget.FrameLayout
+import android.widget.ImageView
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.util.concurrent.Executors
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -29,6 +39,9 @@ class MainActivity : Activity() {
     private var selectedCategory = "all"
     private var pendingQuery = ""
     private val favorites = mutableSetOf<String>()
+    private val photoExecutor = Executors.newFixedThreadPool(3)
+    private val photoCache = mutableMapOf<String, android.graphics.Bitmap>()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var nav: LinearLayout
@@ -40,29 +53,55 @@ class MainActivity : Activity() {
     private val green = Color.rgb(37, 91, 65)
     private val birds = listOf(
         Bird("Common Kingfisher", "普通翠鸟", "Alcedo atthis", "翠鸟科 / Alcedinidae",
-            "A brilliant blue-and-orange fish hunter, often seen perched above clear water.",
-            "Rivers, streams and lakes / 河流、溪流与湖泊", "Europe, Asia and North Africa / 欧洲、亚洲及北非", "🐦", 0xFFE2F0E9.toInt()),
+            "Blue-and-orange fish hunter / 蓝橙相间、以鱼类为食", "Rivers, streams and lakes / 河流、溪流与湖泊", "Europe, Asia and North Africa / 欧洲、亚洲及北非", "🐦", 0xFFE2F0E9.toInt()),
         Bird("Mute Swan", "疣鼻天鹅", "Cygnus olor", "鸭科 / Anatidae",
-            "A large white waterbird with an orange bill and a distinctive black knob.",
-            "Lakes, ponds and coastal waters / 湖泊、池塘与沿海水域", "Europe and parts of Asia / 欧洲及亚洲部分地区", "🦢", 0xFFE5EEF4.toInt()),
+            "Large white waterbird with an orange bill / 大型白色水鸟，橙色喙基部有黑色瘤突", "Lakes, ponds and coasts / 湖泊、池塘与海岸", "Europe and parts of Asia / 欧洲及亚洲部分地区", "🦢", 0xFFE5EEF4.toInt()),
         Bird("Barn Owl", "仓鸮", "Tyto alba", "草鸮科 / Tytonidae",
-            "A nocturnal hunter recognised by its pale, heart-shaped facial disc.",
-            "Farmland, grassland and open woodland / 农田、草地与疏林", "Widespread across many continents / 广布多个大陆", "🦉", 0xFFF3EBDD.toInt()),
+            "Nocturnal hunter with a pale heart-shaped facial disc / 夜行性猛禽，面盘呈浅色心形", "Farmland, grassland and open woodland / 农田、草地与疏林", "Widespread across several continents / 广布多个大陆", "🦉", 0xFFF3EBDD.toInt()),
         Bird("Eurasian Blue Tit", "蓝山雀", "Cyanistes caeruleus", "山雀科 / Paridae",
-            "A small, agile bird with a blue crown and yellow underside.",
-            "Woodland, gardens and parks / 林地、花园与公园", "Europe and western Asia / 欧洲及西亚", "🐤", 0xFFE9F0D9.toInt()),
+            "Small agile bird with a blue crown and yellow underside / 小型活跃鸟类，蓝色头顶、黄色腹部", "Woodland, gardens and parks / 林地、花园与公园", "Europe and western Asia / 欧洲及西亚", "🐤", 0xFFE9F0D9.toInt()),
         Bird("Peregrine Falcon", "游隼", "Falco peregrinus", "隼科 / Falconidae",
-            "A powerful falcon famous for its fast hunting stoop.",
-            "Cliffs, coasts and cities / 悬崖、海岸与城市", "Nearly worldwide / 几乎遍布全球", "🦅", 0xFFE9E9F2.toInt()),
+            "Powerful falcon known for its high-speed hunting stoop / 以高速俯冲捕猎闻名的强健隼类", "Cliffs, coasts and cities / 悬崖、海岸与城市", "Nearly worldwide / 几乎遍布全球", "🦅", 0xFFE9E9F2.toInt()),
         Bird("Eurasian Magpie", "喜鹊", "Pica pica", "鸦科 / Corvidae",
-            "An intelligent black-and-white bird with a long tail and iridescent wings.",
-            "Open woodland, farmland and towns / 疏林、农田与城镇", "Europe, North Africa and Asia / 欧洲、北非及亚洲", "🐦‍⬛", 0xFFEDE9E3.toInt()),
+            "Intelligent black-and-white bird with a long tail / 黑白相间、长尾，行为聪明灵活", "Open woodland, farmland and towns / 疏林、农田与城镇", "Europe, North Africa and Asia / 欧洲、北非及亚洲", "🐦‍⬛", 0xFFEDE9E3.toInt()),
         Bird("Mallard", "绿头鸭", "Anas platyrhynchos", "鸭科 / Anatidae",
-            "A familiar dabbling duck; males show a glossy green head.",
-            "Wetlands, ponds and parks / 湿地、池塘与公园", "Northern Hemisphere / 北半球", "🦆", 0xFFE1EEE8.toInt()),
+            "Common dabbling duck; males have a glossy green head / 常见涉水鸭，雄鸟头部呈金属绿色", "Wetlands, ponds and parks / 湿地、池塘与公园", "Northern Hemisphere / 北半球", "🦆", 0xFFE1EEE8.toInt()),
         Bird("White-tailed Eagle", "白尾海雕", "Haliaeetus albicilla", "鹰科 / Accipitridae",
-            "A very large eagle associated with coasts and freshwater habitats.",
-            "Coasts, lakes and large rivers / 海岸、湖泊与大河", "Northern Europe and Asia / 北欧及亚洲", "🦅", 0xFFE8ECE3.toInt())
+            "Large sea eagle with broad wings and a pale tail / 大型海雕，翼宽，成鸟尾部浅色", "Coasts, lakes and large rivers / 海岸、湖泊与大河", "Northern Europe and Asia / 北欧及亚洲", "🦅", 0xFFE8ECE3.toInt()),
+        Bird("Atlantic Puffin", "冠海雀", "Fratercula arctica", "海雀科 / Alcidae",
+            "Stocky seabird with a colourful breeding-season bill / 体形敦实，繁殖季喙部色彩鲜艳", "North Atlantic islands and sea cliffs / 北大西洋岛屿与海崖", "North Atlantic / 北大西洋", "🐧", 0xFFE8EAF0.toInt()),
+        Bird("Common Raven", "渡鸦", "Corvus corax", "鸦科 / Corvidae",
+            "Large all-black corvid with a heavy bill / 大型通体黑色鸦类，喙粗壮", "Mountains, forests and open country / 山地、森林与开阔地", "Northern Hemisphere / 北半球", "🐦‍⬛", 0xFFE8E7E5.toInt()),
+        Bird("Great Spotted Woodpecker", "大斑啄木鸟", "Dendrocopos major", "啄木鸟科 / Picidae",
+            "Black-and-white woodpecker with red undertail coverts / 黑白羽色，尾下覆羽红色", "Woodlands, parks and mature gardens / 林地、公园与成熟庭园", "Europe and northern Asia / 欧洲及亚洲北部", "🐦", 0xFFECE9E2.toInt()),
+        Bird("European Robin", "欧亚鸲", "Erithacus rubecula", "鹟科 / Muscicapidae",
+            "Small songbird with a distinctive orange-red breast / 小型鸣禽，胸前橙红色斑块醒目", "Woodland, hedges and gardens / 林地、树篱与花园", "Europe and western Asia / 欧洲及西亚", "🐤", 0xFFF3E5DA.toInt()),
+        Bird("Common Blackbird", "乌鸫", "Turdus merula", "鸫科 / Turdidae",
+            "Male is glossy black with a bright yellow bill / 雄鸟通体乌黑，喙呈鲜黄色", "Gardens, woodland and parks / 花园、林地与公园", "Europe, North Africa and Asia / 欧洲、北非及亚洲", "🐦‍⬛", 0xFFE8E7E5.toInt()),
+        Bird("Great Cormorant", "普通鸬鹚", "Phalacrocorax carbo", "鸬鹚科 / Phalacrocoracidae",
+            "Dark fish-eating waterbird that often spreads its wings to dry / 深色食鱼水鸟，常张开双翼晾晒", "Coasts, estuaries, lakes and rivers / 海岸、河口、湖泊与河流", "Widespread across the Old World / 广布旧大陆", "🐦", 0xFFE1E9E8.toInt()),
+        Bird("Grey Heron", "苍鹭", "Ardea cinerea", "鹭科 / Ardeidae",
+            "Tall wading bird with a long neck and dagger-like bill / 高大的涉禽，长颈、长而尖的喙", "Wetlands, rivers and shorelines / 湿地、河流与岸边", "Europe, Asia and Africa / 欧洲、亚洲及非洲", "🪶", 0xFFE5EBED.toInt()),
+        Bird("Common Crane", "灰鹤", "Grus grus", "鹤科 / Gruidae",
+            "Large elegant crane with a red crown patch / 大型优雅鹤类，头顶有红色裸露皮肤", "Marshes, wetlands and open fields / 沼泽、湿地与开阔田野", "Europe and northern Asia / 欧洲及亚洲北部", "🪽", 0xFFE7EAE5.toInt()),
+        Bird("Osprey", "鹗", "Pandion haliaetus", "鹗科 / Pandionidae",
+            "Fish-eating raptor with reversible outer toes / 以鱼为食的猛禽，外趾可前后转换", "Coasts, lakes and large rivers / 海岸、湖泊与大河", "Nearly worldwide / 近全球分布", "🦅", 0xFFE6ECE8.toInt()),
+        Bird("Golden Eagle", "金雕", "Aquila chrysaetos", "鹰科 / Accipitridae",
+            "Large brown eagle with golden feathers on the nape / 大型褐色雕，后颈羽毛呈金黄色", "Mountains, moorland and open country / 山地、荒原与开阔地", "Northern Hemisphere / 北半球", "🦅", 0xFFECE6D8.toInt()),
+        Bird("Common Swift", "普通雨燕", "Apus apus", "雨燕科 / Apodidae",
+            "Aerial specialist that spends most of its life in flight / 高度适应空中生活，绝大多数时间在飞行", "Towns, cliffs and open skies / 城镇、悬崖与开阔天空", "Europe, Asia and Africa / 欧洲、亚洲及非洲", "🐦", 0xFFE6E9E9.toInt()),
+        Bird("White Stork", "白鹳", "Ciconia ciconia", "鹳科 / Ciconiidae",
+            "Large white stork with black flight feathers and red legs / 大型白色鹳类，飞羽黑色、腿红色", "Wet meadows, farmland and wetlands / 湿草地、农田与湿地", "Europe, western Asia and Africa / 欧洲、西亚及非洲", "🪽", 0xFFECEDE8.toInt()),
+        Bird("Northern Cardinal", "北美红雀", "Cardinalis cardinalis", "红雀科 / Cardinalidae",
+            "Male has vivid red plumage and a prominent crest / 雄鸟通体鲜红，头顶有明显冠羽", "Woodland edges, gardens and scrub / 林缘、花园与灌丛", "Eastern and central North America / 北美东部及中部", "🐦", 0xFFF2E1DD.toInt()),
+        Bird("Bald Eagle", "白头海雕", "Haliaeetus leucocephalus", "鹰科 / Accipitridae",
+            "Adult has a white head and tail with a dark brown body / 成鸟头尾白色，身体深褐色", "Coasts, lakes and large rivers / 海岸、湖泊与大河", "North America / 北美洲", "🦅", 0xFFE9E9E2.toInt()),
+        Bird("Emperor Penguin", "帝企鹅", "Aptenodytes forsteri", "企鹅科 / Spheniscidae",
+            "The tallest and heaviest living penguin species / 现存体形最高、最重的企鹅", "Antarctic sea ice and surrounding ocean / 南极海冰及周边海域", "Antarctica / 南极洲", "🐧", 0xFFE2E9EF.toInt()),
+        Bird("Shoebill", "鲸头鹳", "Balaeniceps rex", "鲸头鹳科 / Balaenicipitidae",
+            "Large African wetland bird with a massive shoe-shaped bill / 非洲大型湿地鸟类，喙巨大呈鞋状", "Tropical swamps and papyrus wetlands / 热带沼泽与纸莎草湿地", "Central and East Africa / 中非及东非", "🪽", 0xFFE9E5D9.toInt()),
+        Bird("Hummingbird", "蜂鸟（示例类群）", "Trochilidae", "蜂鸟科 / Trochilidae",
+            "Tiny hovering nectar-feeding birds; this entry represents the family / 能悬停取食花蜜的小型鸟类；本条目代表整个科", "Forests, gardens and mountain habitats in the Americas / 美洲森林、花园及山地", "The Americas / 美洲", "🐦", 0xFFE7EEE0.toInt())
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -263,7 +302,7 @@ class MainActivity : Activity() {
         body.addView(space(20))
         addSectionTitle(if (chinese) "鸟类精选" else "Featured birds", if (chinese) "从这几种鸟开始认识" else "A few species to get you started")
         birds.take(3).forEach { birdCard(it, true) }
-        body.addView(text(if (chinese) "当前为演示资料库，共 8 个示例鸟种；全球完整名录仍待接入。" else "Demo dataset: 8 sample species. A complete global checklist is still to be integrated.", 11f, muted))
+        body.addView(text(if (chinese) "当前收录 25 个示例条目（含一个科级示例）；全球完整名录仍待接入。" else "25 sample entries (including one family-level example). A complete global checklist is still to be integrated.", 11f, muted))
     }
 
     private fun showGuide() {
@@ -298,9 +337,9 @@ class MainActivity : Activity() {
             val filtered = birds.filter { b ->
                 val textMatch = q.isBlank() || listOf(b.english, b.chinese, b.scientific).any { it.contains(q, true) }
                 val categoryMatch = when (selectedCategory) {
-                    "water" -> b.scientific in listOf("Cygnus olor", "Anas platyrhynchos", "Alcedo atthis")
-                    "raptor" -> b.scientific in listOf("Falco peregrinus", "Haliaeetus albicilla", "Tyto alba")
-                    "garden" -> b.scientific in listOf("Cyanistes caeruleus", "Pica pica")
+                    "water" -> b.scientific in listOf("Cygnus olor", "Anas platyrhynchos", "Alcedo atthis", "Fratercula arctica", "Phalacrocorax carbo", "Ardea cinerea", "Grus grus", "Ciconia ciconia", "Aptenodytes forsteri", "Balaeniceps rex")
+                    "raptor" -> b.scientific in listOf("Falco peregrinus", "Haliaeetus albicilla", "Tyto alba", "Pandion haliaetus", "Aquila chrysaetos", "Haliaeetus leucocephalus")
+                    "garden" -> b.scientific in listOf("Cyanistes caeruleus", "Pica pica", "Erithacus rubecula", "Turdus merula", "Cardinalis cardinalis", "Dendrocopos major")
                     else -> true
                 }
                 textMatch && categoryMatch
@@ -328,12 +367,22 @@ class MainActivity : Activity() {
             background = rounded(Color.WHITE, 17, 0xFFE7ECE7.toInt())
             setOnClickListener { showDetail(bird) }
         }
-        card.addView(TextView(this).apply {
-            text = bird.emoji
-            textSize = 30f
-            gravity = Gravity.CENTER
+        val photo = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
             background = rounded(bird.color, 14)
-        }, LinearLayout.LayoutParams(dp(58), dp(58)))
+            visibility = View.INVISIBLE
+        }
+        val photoFrame = FrameLayout(this).apply {
+            background = rounded(bird.color, 14)
+            addView(TextView(this@MainActivity).apply {
+                text = bird.emoji
+                textSize = 28f
+                gravity = Gravity.CENTER
+            }, FrameLayout.LayoutParams(-1, -1))
+            addView(photo, FrameLayout.LayoutParams(-1, -1))
+        }
+        card.addView(photoFrame, LinearLayout.LayoutParams(dp(58), dp(58)))
+        loadBirdPhoto(bird, photo)
         val info = column().apply { setPadding(dp(11), 0, 0, 0) }
         info.addView(text(if (chinese) bird.chinese else bird.english, 15f, ink, true))
         info.addView(text(bird.english + " · " + bird.scientific, 11f, muted))
@@ -355,7 +404,20 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(dp(20), dp(28), dp(20), dp(28))
             background = rounded(bird.color, 22)
-            addView(text(bird.emoji, 58f))
+            val heroPhoto = ImageView(this@MainActivity).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = rounded(bird.color, 16)
+                visibility = View.INVISIBLE
+            }
+            addView(FrameLayout(this@MainActivity).apply {
+                addView(TextView(this@MainActivity).apply {
+                    text = bird.emoji
+                    textSize = 58f
+                    gravity = Gravity.CENTER
+                }, FrameLayout.LayoutParams(-1, -1))
+                addView(heroPhoto, FrameLayout.LayoutParams(-1, -1))
+            }, LinearLayout.LayoutParams(-1, dp(190)))
+            loadBirdPhoto(bird, heroPhoto)
             addView(text(if (chinese) bird.chinese else bird.english, 23f, ink, true))
             addView(text(if (chinese) bird.english else bird.chinese, 14f, muted))
         }
@@ -384,6 +446,53 @@ class MainActivity : Activity() {
                 showDetail(bird)
             }
         })
+    }
+
+    private fun loadBirdPhoto(bird: Bird, target: ImageView) {
+        target.tag = bird.scientific
+        val cached = synchronized(photoCache) { photoCache[bird.scientific] }
+        if (cached != null) {
+            target.setImageBitmap(cached)
+            target.visibility = View.VISIBLE
+            return
+        }
+        photoExecutor.execute {
+            try {
+                val query = URLEncoder.encode(bird.scientific + " bird", "UTF-8")
+                val api = URL("https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrnamespace=6&gsrlimit=1&prop=imageinfo&iiprop=url&iiurlwidth=640&format=json")
+                val connection = (api.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 9000
+                    readTimeout = 9000
+                    setRequestProperty("User-Agent", "AllBirdAndroid/1.0 (bird guide app)")
+                }
+                val json = connection.inputStream.bufferedReader().use { it.readText() }
+                connection.disconnect()
+                val pages = JSONObject(json).optJSONObject("query")?.optJSONObject("pages")
+                val keys = pages?.keys()
+                val first = if (keys != null && keys.hasNext()) pages.optJSONObject(keys.next()) else null
+                val imageUrl = first?.optJSONArray("imageinfo")?.optJSONObject(0)?.optString("thumburl")
+                    ?: first?.optJSONArray("imageinfo")?.optJSONObject(0)?.optString("url")
+                if (!imageUrl.isNullOrBlank()) {
+                    val imageConnection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 9000
+                        readTimeout = 12000
+                    }
+                    val bitmap = imageConnection.inputStream.use { BitmapFactory.decodeStream(it) }
+                    imageConnection.disconnect()
+                    if (bitmap != null) {
+                        synchronized(photoCache) { photoCache[bird.scientific] = bitmap }
+                        mainHandler.post {
+                            if (target.tag == bird.scientific) {
+                                target.setImageBitmap(bitmap)
+                                target.visibility = View.VISIBLE
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Keep the illustrated placeholder when a photo is unavailable or offline.
+            }
+        }
     }
 
     private fun showIdentify() {

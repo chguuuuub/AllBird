@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private val favorites = mutableSetOf<String>()
     private val photoExecutor = Executors.newFixedThreadPool(3)
     private val photoCache = mutableMapOf<String, android.graphics.Bitmap>()
+    private val photoAttributionCache = mutableMapOf<String, String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
     private lateinit var scroll: ScrollView
@@ -417,11 +418,13 @@ class MainActivity : Activity() {
                 }, FrameLayout.LayoutParams(-1, -1))
                 addView(heroPhoto, FrameLayout.LayoutParams(-1, -1))
             }, LinearLayout.LayoutParams(-1, dp(190)))
-            loadBirdPhoto(bird, heroPhoto)
+            loadBirdPhoto(bird, heroPhoto, photoCredit)
             addView(text(if (chinese) bird.chinese else bird.english, 23f, ink, true))
             addView(text(if (chinese) bird.english else bird.chinese, 14f, muted))
         }
-        addCard(banner, 15)
+        addCard(banner, 5)
+        val photoCredit = text(if (chinese) "照片来源与许可信息加载中…" else "Loading photo source and license…", 10f, muted)
+        body.addView(photoCredit)
         body.addView(text(bird.scientific, 16f, green, true))
         body.addView(text(bird.family, 13f, muted))
         body.addView(space(18))
@@ -448,18 +451,20 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun loadBirdPhoto(bird: Bird, target: ImageView) {
+    private fun loadBirdPhoto(bird: Bird, target: ImageView, creditView: TextView? = null) {
         target.tag = bird.scientific
         val cached = synchronized(photoCache) { photoCache[bird.scientific] }
+        val cachedCredit = synchronized(photoAttributionCache) { photoAttributionCache[bird.scientific] }
         if (cached != null) {
             target.setImageBitmap(cached)
             target.visibility = View.VISIBLE
+            if (creditView != null && cachedCredit != null) creditView.text = cachedCredit
             return
         }
         photoExecutor.execute {
             try {
-                val query = URLEncoder.encode(bird.scientific + " bird", "UTF-8")
-                val api = URL("https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrnamespace=6&gsrlimit=1&prop=imageinfo&iiprop=url&iiurlwidth=640&format=json")
+                val query = URLEncoder.encode("\"${bird.scientific}\"", "UTF-8")
+                val api = URL("https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=640&format=json")
                 val connection = (api.openConnection() as HttpURLConnection).apply {
                     connectTimeout = 9000
                     readTimeout = 9000
@@ -468,29 +473,66 @@ class MainActivity : Activity() {
                 val json = connection.inputStream.bufferedReader().use { it.readText() }
                 connection.disconnect()
                 val pages = JSONObject(json).optJSONObject("query")?.optJSONObject("pages")
+                val candidates = mutableListOf<Triple<Int, String, JSONObject>>()
                 val keys = pages?.keys()
-                val first = if (keys != null && keys.hasNext()) pages.optJSONObject(keys.next()) else null
-                val imageUrl = first?.optJSONArray("imageinfo")?.optJSONObject(0)?.optString("thumburl")
-                    ?: first?.optJSONArray("imageinfo")?.optJSONObject(0)?.optString("url")
-                if (!imageUrl.isNullOrBlank()) {
-                    val imageConnection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 9000
-                        readTimeout = 12000
-                    }
-                    val bitmap = imageConnection.inputStream.use { BitmapFactory.decodeStream(it) }
-                    imageConnection.disconnect()
-                    if (bitmap != null) {
-                        synchronized(photoCache) { photoCache[bird.scientific] = bitmap }
-                        mainHandler.post {
-                            if (target.tag == bird.scientific) {
-                                target.setImageBitmap(bitmap)
-                                target.visibility = View.VISIBLE
+                while (keys != null && keys.hasNext()) {
+                    val page = pages.optJSONObject(keys.next()) ?: continue
+                    val title = page.optString("title").substringAfter("File:").replace('_', ' ')
+                    val info = page.optJSONArray("imageinfo")?.optJSONObject(0) ?: continue
+                    val metadata = info.optJSONObject("extmetadata") ?: JSONObject()
+                    val description = metadata.optJSONObject("ImageDescription")?.optString("value").orEmpty()
+                    val searchable = (title + " " + description).replace(Regex("<[^>]+>"), "").lowercase()
+                    val scientificTokens = bird.scientific.lowercase().split(" ")
+                    val commonTokens = bird.english.lowercase().split(" ").filter { it.length > 3 }
+                    var score = 0
+                    if (searchable.contains(bird.scientific.lowercase())) score += 100
+                    if (searchable.contains(bird.english.lowercase())) score += 90
+                    score += scientificTokens.count { searchable.contains(it) } * 22
+                    score += commonTokens.count { searchable.contains(it) } * 8
+                    candidates.add(Triple(score, title, info))
+                }
+                val best = candidates.maxByOrNull { it.first }
+                if (best != null && best.first >= 22) {
+                    val info = best.third
+                    val imageUrl = info.optString("thumburl").ifBlank { info.optString("url") }
+                    if (imageUrl.isNotBlank()) {
+                        val imageConnection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 9000
+                            readTimeout = 12000
+                        }
+                        val bitmap = imageConnection.inputStream.use { BitmapFactory.decodeStream(it) }
+                        imageConnection.disconnect()
+                        val metadata = info.optJSONObject("extmetadata") ?: JSONObject()
+                        fun cleanMeta(key: String): String = metadata.optJSONObject(key)?.optString("value")
+                            .orEmpty().replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").trim()
+                        val artist = cleanMeta("Artist").ifBlank { "Unknown author" }
+                        val license = cleanMeta("LicenseShortName").ifBlank { "License details unavailable" }
+                        val credit = "Wikimedia Commons · ${best.second} · © $artist · $license"
+                        if (bitmap != null) {
+                            synchronized(photoCache) { photoCache[bird.scientific] = bitmap }
+                            synchronized(photoAttributionCache) { photoAttributionCache[bird.scientific] = credit }
+                            mainHandler.post {
+                                if (target.tag == bird.scientific) {
+                                    target.setImageBitmap(bitmap)
+                                    target.visibility = View.VISIBLE
+                                }
+                                if (creditView != null && creditView.isAttachedToWindow) creditView.text = credit
                             }
+                        }
+                    }
+                } else {
+                    mainHandler.post {
+                        if (creditView != null && creditView.isAttachedToWindow) {
+                            creditView.text = if (chinese) "未找到足够匹配的照片，已保留示意图。" else "No sufficiently matched photo; illustration retained."
                         }
                     }
                 }
             } catch (_: Exception) {
-                // Keep the illustrated placeholder when a photo is unavailable or offline.
+                mainHandler.post {
+                    if (creditView != null && creditView.isAttachedToWindow) {
+                        creditView.text = if (chinese) "照片暂不可用；请检查网络连接。" else "Photo unavailable; check the network connection."
+                    }
+                }
             }
         }
     }

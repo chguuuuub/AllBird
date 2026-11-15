@@ -73,7 +73,7 @@ class MainActivity : Activity() {
 
         search = EditText(this).apply {
             hint = if (chinese) "搜索鸟名或学名" else "Search common or scientific name"
-            singleLine = true
+            setSingleLine(true)
         }
         root.addView(search)
 

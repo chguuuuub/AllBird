@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private var chinese = true
     private var page = "home"
     private var selectedCategory = "all"
+    private var pendingQuery = ""
     private val favorites = mutableSetOf<String>()
     private lateinit var body: LinearLayout
     private lateinit var scroll: ScrollView
@@ -233,7 +234,7 @@ is a discovery.", 25f, green, true))
         val searchBox = EditText(this).apply {
             hint = if (chinese) "搜索鸟名、英文名或学名" else "Search common or scientific name"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
             setPadding(dp(15), dp(12), dp(15), dp(12))
             background = rounded(Color.WHITE, 15, 0xFFE2E9E2.toInt())
             addTextChangedListener(object : TextWatcher {
@@ -324,7 +325,7 @@ is a discovery.", 25f, green, true))
         }
         field.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = populate(s?.toString().orEmpty())
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { pendingQuery = s?.toString().orEmpty(); populate(pendingQuery) }
             override fun afterTextChanged(s: Editable?) = Unit
         })
         body.addView(list)

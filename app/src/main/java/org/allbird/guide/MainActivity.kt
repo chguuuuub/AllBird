@@ -492,7 +492,7 @@ class MainActivity : Activity() {
                     candidates.add(Triple(score, title, info))
                 }
                 val best = candidates.maxByOrNull { it.first }
-                if (best != null && best.first >= 22) {
+                if (best != null && best.first >= 30) {
                     val info = best.third
                     val imageUrl = info.optString("thumburl").ifBlank { info.optString("url") }
                     if (imageUrl.isNotBlank()) {

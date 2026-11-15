@@ -214,9 +214,7 @@ class MainActivity : Activity() {
             setPadding(dp(19), dp(20), dp(19), dp(19))
             background = rounded(0xFFE1EDE4.toInt(), 22)
         }
-        hero.addView(text(if (chinese) "让每一次遇见，
-都成为自然发现。" else "Every encounter
-is a discovery.", 25f, green, true))
+        hero.addView(text(if (chinese) "让每一次遇见，\n都成为自然发现。" else "Every encounter\nis a discovery.", 25f, green, true))
         hero.addView(space(8))
         hero.addView(text(if (chinese) "从身边常见鸟类，到世界各地的野生鸟类。" else "From familiar backyard birds to wildlife around the world.", 13f, muted))
         hero.addView(space(15))
@@ -232,23 +230,13 @@ is a discovery.", 25f, green, true))
         addCard(hero, 18)
 
         val searchBox = EditText(this).apply {
-            hint = if (chinese) "搜索鸟名、英文名或学名" else "Search common or scientific name"
+            hint = if (chinese) "点击搜索鸟名、英文名或学名" else "Tap to search species"
             textSize = 14f
             setSingleLine(true)
+            isFocusable = false
             setPadding(dp(15), dp(12), dp(15), dp(12))
             background = rounded(Color.WHITE, 15, 0xFFE2E9E2.toInt())
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    if (!s.isNullOrBlank()) {
-                        pendingQuery = s.toString()
-                        page = "guide"
-                        render()
-                        // Search is also available on the guide page.
-                    }
-                }
-                override fun afterTextChanged(s: Editable?) = Unit
-            })
+            setOnClickListener { page = "guide"; render() }
         }
         addCard(searchBox, 18)
 
@@ -283,7 +271,8 @@ is a discovery.", 25f, green, true))
         val field = EditText(this).apply {
             hint = if (chinese) "搜索中英文名称或学名" else "Search names or scientific name"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
+            setText(pendingQuery)
             setPadding(dp(14), dp(11), dp(14), dp(11))
             background = rounded(Color.WHITE, 14, 0xFFE2E9E2.toInt())
         }

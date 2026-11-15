@@ -401,6 +401,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(5), 0, dp(15))
             setOnClickListener { page = "guide"; render() }
         })
+        val photoCredit = text(if (chinese) "照片来源与许可信息加载中…" else "Loading photo source and license…", 10f, muted)
         val banner = column().apply {
             gravity = Gravity.CENTER
             setPadding(dp(20), dp(28), dp(20), dp(28))
@@ -423,7 +424,6 @@ class MainActivity : Activity() {
             addView(text(if (chinese) bird.english else bird.chinese, 14f, muted))
         }
         addCard(banner, 5)
-        val photoCredit = text(if (chinese) "照片来源与许可信息加载中…" else "Loading photo source and license…", 10f, muted)
         body.addView(photoCredit)
         body.addView(text(bird.scientific, 16f, green, true))
         body.addView(text(bird.family, 13f, muted))

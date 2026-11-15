@@ -241,6 +241,7 @@ is a discovery.", 25f, green, true))
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     if (!s.isNullOrBlank()) {
+                        pendingQuery = s.toString()
                         page = "guide"
                         render()
                         // Search is also available on the guide page.
